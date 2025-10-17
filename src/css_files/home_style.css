@@ -1,0 +1,476 @@
+/* Table Styling */
+/* Global Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    font-family: Arial, sans-serif;
+    background-color: rgb(230, 230, 250);
+    line-height: 1.6;
+    width: 100%;
+    height: 100%;
+    overflow-x: hidden;
+}
+/* Base (desktop / large screens) */
+/* Wrapper: rely on gap, not space-between */
+.grid-wrapper {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    min-height: 0;
+}
+
+/* Two equal columns that won’t wrap due to rounding */
+.grid-section-2x {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); /* minmax(0,1fr) avoids overflow */
+    flex: 1 1 0;            /* share space evenly */
+    min-width: 0;           /* <-- KEY so the column can actually shrink */
+    min-height: 0;
+    height: auto;
+    gap: 1%;
+}
+/* Two equal columns that won’t wrap due to rounding */
+.grid-section-1x {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr)); /* minmax(0,1fr) avoids overflow */
+    flex: 1 1 0;            /* share space evenly */
+    min-width: 0;
+    height: auto;       
+    min-height: 0;         /* <-- KEY so the column can actually shrink */
+    gap: 1%;
+    padding-right: 1%;
+      /* Grid-specific alignment (use start/end, not flex-* keywords) */
+    align-items: start;       /* items inside their cells */
+    justify-items: start;
+    align-content: start;     /* pack rows to the TOP of container */
+    justify-content: start;   /* pack columns to the LEFT */
+    overflow: hidden;
+}
+.grid-section-1x-center {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr)); /* minmax(0,1fr) avoids overflow */
+    flex: 1 1 0;            /* share space evenly */
+    width: 100%;           /* <-- KEY so the column can actually shrink */
+    gap: 1%;
+    padding: auto;
+    place-items: center; /* shorthand for justify-items + align-items */
+    overflow-y: auto;     /* scroll vertically */
+    overflow-x: auto;     /* scroll horizontally */
+    min-height: 0;
+    max-height: 75vh;
+}
+
+
+.grid-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;      /* let child fill */
+  justify-content: stretch;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,.1);
+  min-width: 0;        /* lets tables/charts shrink*/
+  max-height: 40vh;  
+  overflow: auto;          /* keeps shadows clean; scroll inner content instead */
+}
+
+.grid-full-chart {
+  display: flex;
+  align-items: stretch;      /* let child fill */
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,.1);
+  padding: 0.5rem;
+  min-width: 0;              /* lets tables/charts shrink*/
+  max-height: 100%;  
+  overflow: hidden;          /* keeps shadows clean; scroll inner content instead */
+}
+
+/* If you really want fixed ~half widths, use calc instead of 49% */
+.grid-section.half {
+    flex: 0 0 calc(50% - 0.5rem); /* half minus half the gap */
+}
+
+.analysis-root {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+
+}
+
+.analysis-selector {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+}
+
+.analysis-button {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+/* Header Styling */
+.text-left-header, .text-right-header {
+    padding: 10px 15px;
+    background-color: #f2f2f2;
+    color: #333;
+    font-weight: bold;
+    text-align: left;
+    font-size:1.0rem;
+}
+
+.text-right-header {
+    text-align: right;
+    font-size: 1.0rem;
+}
+
+/* Table Body Styling */
+.table-hover tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+.text-left, .text-right {
+    padding: 8px 12px;
+    border-bottom: 1px solid #ddd;
+}
+
+.text-left {
+    text-align: left;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.news-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: Arial, sans-serif;
+    font-size: 1.0rem;
+    table-layout: fixed;  /* prevent width blowup */
+    background-color: #ffffff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Overall Table Style */
+.table_cls,
+.trade-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: Arial, sans-serif;
+    font-size: 1.0rem;
+    table-layout: fixed;  /* prevent width blowup */
+    background-color: #ffffff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Table Header */
+.trade-table thead th {
+    position: sticky;
+    position: sticky;
+    top: 0;    
+    padding: 12px 15px;
+    background-color: #4CAF50;
+    color: #ffffff;
+    font-weight: bold;
+    text-align: left;
+    border-bottom: 2px solid #dddddd;
+}
+
+/* Table Body */
+.trade-table tbody td {
+    padding: 10px 15px;
+    border-bottom: 1px solid #dddddd;
+    text-align: left;
+    color: #333333;
+}
+
+/* Row Hover */
+.trade-table tbody tr:hover {
+    background-color: #f2f2f2;
+}
+
+/* Individual Trade Row */
+.ind-trade {
+    background-color: #fafafa;
+    transition: background-color 0.3s ease;
+}
+
+/* Alternate Row Coloring */
+.trade-table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.main_chart {
+    width: 100%;
+    margin: 2%;
+}
+
+
+.card-news {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr)); /* minmax(0,1fr) avoids overflow */
+    flex: 1 1 0;  
+    background: linear-gradient(145deg, #0b0f1a, #131a26);
+    color: #e6edf3;
+    font-family: 'Fira Code', monospace;
+    width: 100%;
+    align-items: start;
+    justify-content: flex-start;
+}
+
+.card-news div {
+    display: flex;
+    flex-direction: column;
+}
+
+.card-news div input {
+    margin: 4%;
+}
+.card-news div select {
+    margin: 4%;
+}
+/* Card container */
+.card {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr)); /* minmax(0,1fr) avoids overflow */
+    flex: 1 1 0;  
+    background: linear-gradient(145deg, #0b0f1a, #131a26);
+    border: 1px solid rgba(0, 255, 200, 0.2);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6),
+              inset 0 0 12px rgba(0, 255, 200, 0.05);
+    color: #e6edf3;
+    font-family: 'Fira Code', monospace;
+    width: 100%;
+    align-items: flex-start;
+}
+/* Labels */
+.card label {
+  display: block;
+  margin-top: 0.8rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+  color: #8fa5c2;
+}
+
+/* Inputs */
+.card input {
+  width: 70%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 255, 200, 0.15);
+  background-color: rgba(20, 28, 40, 0.95);
+  color: #e6edf3;
+  font-size: 0.9rem;
+  font-family: 'Fira Code', monospace;
+  transition: all 0.25s ease;
+}
+
+/* Focus + Hover */
+.card input:focus {
+  outline: none;
+  border-color: #00ffc8;
+  box-shadow: 0 0 12px rgba(0, 255, 200, 0.4);
+}
+
+.card input:hover {
+  border-color: rgba(0, 255, 200, 0.35);
+}
+
+/* Optional animations for futuristic feel */
+@keyframes glowPulse {
+  0%   { box-shadow: 0 0 6px rgba(0, 255, 200, 0.3); }
+  50%  { box-shadow: 0 0 14px rgba(0, 255, 200, 0.6); }
+  100% { box-shadow: 0 0 6px rgba(0, 255, 200, 0.3); }
+}
+
+.card input:focus {
+  animation: glowPulse 1.8s infinite;
+}
+
+.backtest-choice-params {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); /* minmax(0,1fr) avoids overflow */
+    flex: 1 1 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    width: 90%;
+    margin-bottom: 2vh;
+}
+.backtest-table-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+}
+
+.kv-table {
+    width: 70%;
+    height:40vh;
+    border-collapse: collapse;
+    background: linear-gradient(145deg, #0b0f17, #111827);
+    box-shadow: 0 0 20px rgba(0, 255, 200, 0.1);
+    border-radius: 12px;
+    overflow: hidden;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.95rem;
+    color: #e5e7eb;
+}
+
+.kv-table th,
+.kv-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgba(0, 255, 200, 0.15);
+}
+
+.kv-table th {
+    text-align: left;
+    color: #00ffc8;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    width: 220px;
+    background: rgba(0, 255, 200, 0.05);
+    border-right: 1px solid rgba(0, 255, 200, 0.15);
+}
+
+.kv-table tr:last-child td {
+    border-bottom: none;
+}
+
+.kv-table tr:hover {
+    background: rgba(0, 255, 200, 0.08);
+    transition: background 0.2s ease-in-out;
+}
+
+.kv-table td {
+    color: #d1d5db;
+}
+
+.kv-table td.path {
+    font-size: 0.85rem;
+    word-break: break-all;
+    opacity: 0.85;
+    color: #9ca3af;
+}
+.form-section-wrapper {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    align-items: stretch;
+    width: 100%;
+    padding-right: 1.5rem;
+}
+
+.button-section-wrapper {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    align-items: stretch;
+    width: 100%;
+    padding-left: 1.5rem;
+}
+
+.button-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, 180px);
+    justify-content: flex-start; /* was 'start' */
+    align-items: flex=flex-start;
+    flex-wrap: wrap;  
+    width: 100%;
+    min-height: 25vh;
+}
+
+.form-section {
+    text-align: center;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: flex-start;
+    width: 100%;
+    min-height: 25vh;
+}
+
+/*Title */
+h3.qh3-term{
+    color: #000000;
+    font: 800 1.1rem/1.2 "JetBrains Mono", ui-monospace, monospace;
+    letter-spacing: .4px;
+    padding-bottom: .45rem;
+    position: relative;
+    padding-bottom: 2vh;
+}
+
+.prompt-box {
+    display: flex;
+    flex-direction: column;
+    margin-top: 3vh;
+    gap: 0.75rem;
+    padding: 1rem;
+    width: 100%;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #0d0d0f, #141418);
+    border: 1px solid rgba(0, 255, 200, 0.2);
+    box-shadow: 0 0 20px rgba(0, 255, 200, 0.05);
+    font-family: 'Fira Code', monospace;
+    color: #e0e0e0;
+}
+
+.prompt-box label {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #00ffc8;
+}
+
+.prompt-box textarea {
+    resize: vertical;
+    min-height: 5vh;
+    padding: 0.75rem;
+    margin-left: 5%;
+    margin-right: 5%;
+    border-radius: 8px;
+    background: #1a1a1f;
+    border: 1px solid rgba(0, 255, 200, 0.25);
+    color: #e0e0e0;
+    font-size: 1rem;
+    line-height: 1.4;
+    transition: border 0.3s ease, box-shadow 0.3s ease;
+}
+
+.prompt-box textarea:focus {
+    outline: none;
+    border-color: #00ffc8;
+    box-shadow: 0 0 10px rgba(0, 255, 200, 0.4);
+}
+
+.prompt-box button {
+    align-self: flex-end;
+    padding: 0.6rem 1.2rem;
+    border-radius: 8px;
+    margin-right: 5%;
+    border: none;
+    font-weight: 600;
+    background: linear-gradient(135deg, #00ffc8, #0088ff);
+    color: #0d0d0f;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
+
+.prompt-box button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 12px rgba(0, 255, 200, 0.6);
+}
+
+.prompt-box button:active {
+    transform: translateY(0);
+    box-shadow: 0 0 6px rgba(0, 255, 200, 0.4);
+}
