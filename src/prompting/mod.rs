@@ -18,8 +18,9 @@ pub fn PromptBox() -> Element {
             button {
                 "news update"
             }
-            p {"What do you need help with"}
         }
-
+        div { class: "prompt-out",
+            p {}
+        }
     }
 }

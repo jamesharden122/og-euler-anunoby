@@ -1,4 +1,5 @@
 pub mod datetimeops;
+pub mod multi_type_mat;
 use chrono::{DateTime, Utc};
 use dioxus::prelude::*;
 use nalgebra::DMatrix;

@@ -1,19 +1,20 @@
-use serde::Deserialize;
+use crate::model_request::{momentum_lstm::*, *};
+use crate::news::Fetch;
+use crate::surr_queries::{query_surr_trade_bin_db, query_surr_trademsg_db};
 use crate::{
     charts::{
-        clustering::ScatterPlot, single_asset_lc::PlottersChart,
-        candle_stick::{CandlesChart,LcMatrix},
+        candle_stick::{CandlesChart, LcMatrix},
+        clustering::ScatterPlot,
+        single_asset_lc::PlottersChart,
         ChartType,
     },
     ops::MyMatrix,
-    tables::{SalesTable, TradeDisplay},
     prompting::PromptBox,
+    tables::{SalesTable, TradeDisplay},
 };
-use crate::model_request::{*,momentum_lstm::*};
-use crate::surr_queries::{query_surr_trademsg_db,query_surr_trade_bin_db};
-use crate::news::Fetch;
+use chrono::{DateTime, Utc};
 use dioxus::prelude::*;
-use chrono::{DateTime,Utc};
+use serde::Deserialize;
 //use ml_backend::surreal_queries::{make_db,DbParams};
 
 #[derive(Default, Clone, PartialEq, Debug, Deserialize)]
@@ -28,7 +29,6 @@ struct BacktestResult {
     pub path: String,
 }
 
-
 #[derive(Clone, PartialEq, Debug, Deserialize, Default)]
 struct PhaseStats {
     mu_daily: f64,
@@ -40,42 +40,54 @@ struct PhaseStats {
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Default)]
 struct SplitStats {
-    #[serde(default)] train: PhaseStats,
-    #[serde(default)] val:   PhaseStats,
-    #[serde(default)] test:  PhaseStats,
+    #[serde(default)]
+    train: PhaseStats,
+    #[serde(default)]
+    val: PhaseStats,
+    #[serde(default)]
+    test: PhaseStats,
 }
-
 
 #[component]
 pub fn SingleAsset() -> Element {
-	let mut response = use_signal(MyMatrix::new10x);
+    let mut response = use_signal(MyMatrix::new10x);
     let mut response2 = use_signal(MyMatrix::new10x);
     // initialize signals with a DateTime<Utc>
     let mut date1 = use_signal(Utc::now);
     let mut date2 = use_signal(Utc::now);
-    let mut start_date = use_signal(||Utc::now().to_rfc3339());
-    let mut end_date = use_signal(||Utc::now().to_rfc3339());
-    let mut instrument = use_signal(|| { 8147});
+    let mut start_date = use_signal(|| Utc::now().to_rfc3339());
+    let mut end_date = use_signal(|| Utc::now().to_rfc3339());
+    let mut instrument = use_signal(|| 8147);
     let mut bin_size = use_signal(|| "5m".to_string());
     let mut chart_type = use_signal(|| 0);
-    let url = use_signal(|| { String::from("https://quant-platform-06cb0tpcrpsspao10de28go15s.aws-use1.surreal.cloud/rpc")});
-    let user = use_signal(|| {String::from("root")});
-    let pass = use_signal(|| {String::from("root")});
-    let ns = use_signal(|| {String::from("equities")});
-    let db = use_signal(|| {String::from("historical")});
-    let mut result_body_bt = use_signal(|| {BacktestResult::default()});
-    let mut result_body_trn = use_signal(|| {SplitStats::default()});
+    let url = use_signal(|| {
+        String::from("https://quant-platform-06cb0tpcrpsspao10de28go15s.aws-use1.surreal.cloud/rpc")
+    });
+    let user = use_signal(|| String::from("root"));
+    let pass = use_signal(|| String::from("root"));
+    let ns = use_signal(|| String::from("equities"));
+    let db = use_signal(|| String::from("historical"));
+    let mut result_body_bt = use_signal(|| BacktestResult::default());
+    let mut result_body_trn = use_signal(|| SplitStats::default());
     //========================================================
     //Model Request Params
     //========================================================
     let mut train_mom = use_signal(|| TrainSpec {
         trainer_path: "../ml-project/models/mls_lstm_trainer.py".into(),
         trainer_class: "MLSLSTMTrainer".into(),
-        time_steps: 5, input_dim: 6,
-        val_split: 0.1, test_split: 0.1, epochs: 10,
-        batch_size: None, verbose: 1, shuffle_before_split: false,
-        seed: 42, save_every_epoch: false, save_weights_only: false,
-        monitor: "val_loss".into(), save_best_only: true,
+        time_steps: 5,
+        input_dim: 6,
+        val_split: 0.1,
+        test_split: 0.1,
+        epochs: 10,
+        batch_size: None,
+        verbose: 1,
+        shuffle_before_split: false,
+        seed: 42,
+        save_every_epoch: false,
+        save_weights_only: false,
+        monitor: "val_loss".into(),
+        save_best_only: true,
         feature_names: serde_json::json!([{"MomFactor": null}]),
         feature_spec: serde_json::json!({
             "mean_price":"float32", "ret_sma20":"float32", "ret_sma50":"float32",
@@ -84,10 +96,16 @@ pub fn SingleAsset() -> Element {
         tfrecord_out: "../tmp_data/mom_data_sharpe.tfrecord".into(),
         writer_path: "../ml-project/py/pl2tfrecord_writer.py".into(),
         reader_path: "../ml-project/py/pl2tfrecord_reader.py".into(),
-        sequence_length: 5, horizon: 1, stride: 1,
+        sequence_length: 5,
+        horizon: 1,
+        stride: 1,
         group_col: "instrument_id".into(),
-        return_col: "ret".into(), sigma_col: "sigma".into(), cost_col: "cost".into(),
-        include_cost: true, gzip: true, shuffle: false,
+        return_col: "ret".into(),
+        sigma_col: "sigma".into(),
+        cost_col: "cost".into(),
+        include_cost: true,
+        gzip: true,
+        shuffle: false,
     });
     let mut bt_mom = use_signal(|| BacktestSpec {
         feats: "mom".into(),
@@ -97,10 +115,18 @@ pub fn SingleAsset() -> Element {
     let get_data_button = {
         let log_in = move |_| {
             let date_fmt = "%Y-%m-%dT%H:%M:%S%z";
-            date1.set(DateTime::parse_from_str((start_date().clone() + ":00+0000").as_str(), date_fmt).unwrap().into());
-            println!("{:?}", date1);    
-            date2.set(DateTime::parse_from_str((end_date().clone() + ":00+0000").as_str(), date_fmt).unwrap().into());  
-            println!("{:?}", date2);          
+            date1.set(
+                DateTime::parse_from_str((start_date().clone() + ":00+0000").as_str(), date_fmt)
+                    .unwrap()
+                    .into(),
+            );
+            println!("{:?}", date1);
+            date2.set(
+                DateTime::parse_from_str((end_date().clone() + ":00+0000").as_str(), date_fmt)
+                    .unwrap()
+                    .into(),
+            );
+            println!("{:?}", date2);
             spawn(async move {
                 if let Ok(resp) = query_surr_trademsg_db(
                     url(),
@@ -119,7 +145,6 @@ pub fn SingleAsset() -> Element {
                 }
             });
             spawn(async move {
-
                 if let Ok(resp) = query_surr_trade_bin_db(
                     url(),
                     user(),
@@ -140,7 +165,7 @@ pub fn SingleAsset() -> Element {
         };
         Some(rsx!(button { onclick: log_in, "Get Data" }))
     };
-	let data = response.read();
+    let data = response.read();
     let descrips = data.snapshot(0).unwrap_or_default();
     let data2 = response2.read();
     let descrips2 = data2.snapshot(1).unwrap_or_default();
@@ -243,15 +268,15 @@ pub fn SingleAsset() -> Element {
                             "None"
                         }
                     }
-                }    
+                }
             }
         }
         section { class: "grid-wrapper",
                 PromptBox { }
          }
 
-        
-        UiProvider {  
+
+        UiProvider {
             section { class: "backtest-table-container",
                 div { class: "backtest-choice-params",
                     div { class: "form-section-wrapper",
@@ -271,7 +296,7 @@ pub fn SingleAsset() -> Element {
                                 on_result_bt: move |body: String| result_body_bt.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                                 on_result_trn: move |body: String| result_body_trn.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                             }
-                            ModelBlock { 
+                            ModelBlock {
                                 name: "CNN-16-32",
                                 description: "Convolutional neural net",
                                 parameters: "4.5M",
@@ -279,7 +304,7 @@ pub fn SingleAsset() -> Element {
                                 on_result_bt: move |body: String| result_body_bt.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                                 on_result_trn: move |body: String| result_body_trn.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                             }
-                            ModelBlock { 
+                            ModelBlock {
                                 name: "LSTM-64",
                                 description: "Long short-term memory net",
                                 parameters: "850K",
@@ -287,7 +312,7 @@ pub fn SingleAsset() -> Element {
                                 on_result_bt: move |body: String| result_body_bt.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                                 on_result_trn: move |body: String| result_body_trn.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                             }
-                            ModelBlock { 
+                            ModelBlock {
                                 name: "Transformer-Base",
                                 description: "Encoder-decoder attention model",
                                 parameters: "65M",
@@ -295,7 +320,7 @@ pub fn SingleAsset() -> Element {
                                 on_result_bt: move |body: String| result_body_bt.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                                 on_result_trn: move |body: String| result_body_trn.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                             }
-                            ModelBlock { 
+                            ModelBlock {
                                 name: "DNN-8-8-8",
                                 description: "Fully connected deep network",
                                 parameters: "1.2M",
@@ -303,7 +328,7 @@ pub fn SingleAsset() -> Element {
                                 on_result_bt: move |body: String| result_body_bt.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                                 on_result_trn: move |body: String| result_body_trn.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                             }
-                            ModelBlock { 
+                            ModelBlock {
                                 name: "CNN-16-32",
                                 description: "Convolutional neural net",
                                 parameters: "4.5M",
@@ -311,7 +336,7 @@ pub fn SingleAsset() -> Element {
                                 on_result_bt: move |body: String| result_body_bt.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                                 on_result_trn: move |body: String| result_body_trn.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                             }
-                            ModelBlock { 
+                            ModelBlock {
                                 name: "LSTM-64",
                                 description: "Long short-term memory net",
                                 parameters: "850K",
@@ -319,7 +344,7 @@ pub fn SingleAsset() -> Element {
                                 on_result_bt: move |body: String| result_body_bt.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                                 on_result_trn: move |body: String| result_body_trn.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                             }
-                            ModelBlock { 
+                            ModelBlock {
                                 name: "Transformer-Base",
                                 description: "Encoder-decoder attention model",
                                 parameters: "65M",
@@ -327,7 +352,7 @@ pub fn SingleAsset() -> Element {
                                 on_result_bt: move |body: String| result_body_bt.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                                 on_result_trn: move |body: String| result_body_trn.set(serde_json::from_str(body.as_str()).unwrap_or_default()),
                             }
-                        }   
+                        }
                     }
                 }
             }
@@ -356,15 +381,15 @@ pub fn SingleAsset() -> Element {
                         }
                     }
                     div {
-                        "Model Description with a citation if needed of the 
+                        "Model Description with a citation if needed of the
                         trading algorithm utilized in the model"
                     }
                 }
                 div { class: "grid-section-1x",
                     div { class: "grid-full-chart",
-                        PlottersChart { 
+                        PlottersChart {
                             matrix: data2.clone(),
-                            y_axis : String::from("mean_price"), 
+                            y_axis : String::from("mean_price"),
                         }
                     }
                 }
@@ -374,45 +399,47 @@ pub fn SingleAsset() -> Element {
                     TradeDisplay { data: data.data.clone(), descrips: descrips }
                 }
             }
-            section {class: "grid-wrapper",
-            div {
-                "hello"
-            }  }
         }
     }
 }
 
-
-
-
-
 #[component]
 pub fn UiProvider(children: Element) -> Element {
     // Hooks at top level of the component are OK
-    let start_date     = use_signal(|| None::<String>);
-    let end_date       = use_signal(|| None::<String>);
+    let start_date = use_signal(|| None::<String>);
+    let end_date = use_signal(|| None::<String>);
     let instrument_ids = use_signal(|| vec![8147, 11667]);
-    let bin_size       = use_signal(|| "5m".to_string());
-    let url            = use_signal(|| "http://127.0.0.1:8080".to_string());
-    let user           = use_signal(|| "root".to_string());
-    let pass           = use_signal(|| "root".to_string());
-    let ns             = use_signal(|| "equities".to_string());
-    let db             = use_signal(|| "historical".to_string());
-    let feats          = use_signal(|| Some("mom".to_string()));
-    let model_path     = use_signal(|| Some("../ml-project/models/saved/test/final_model.onnx".to_string()));
-    let out_csv        = use_signal(|| Some("../tmp_data/my_bt.csv".to_string()));
-    let run_name       = use_signal(|| Some("test".to_string()));
+    let bin_size = use_signal(|| "5m".to_string());
+    let url = use_signal(|| "http://127.0.0.1:8080".to_string());
+    let user = use_signal(|| "root".to_string());
+    let pass = use_signal(|| "root".to_string());
+    let ns = use_signal(|| "equities".to_string());
+    let db = use_signal(|| "historical".to_string());
+    let feats = use_signal(|| Some("mom".to_string()));
+    let model_path =
+        use_signal(|| Some("../ml-project/models/saved/test/final_model.onnx".to_string()));
+    let out_csv = use_signal(|| Some("../tmp_data/my_bt.csv".to_string()));
+    let run_name = use_signal(|| Some("test".to_string()));
 
     // The provider just captures already-created signals (no hooks inside)
     use_context_provider(|| UiCtx {
-        start_date, end_date, instrument_ids, bin_size, url, user, pass, ns, db,
-        feats, model_path, out_csv, run_name,
+        start_date,
+        end_date,
+        instrument_ids,
+        bin_size,
+        url,
+        user,
+        pass,
+        ns,
+        db,
+        feats,
+        model_path,
+        out_csv,
+        run_name,
     });
 
     children
 }
-
-
 
 #[component]
 fn ParamsForm() -> Element {
@@ -420,7 +447,12 @@ fn ParamsForm() -> Element {
     // local adapters for text <-> Vec<i64>
     let mut inst_text = use_signal({
         let ids = (ctx.instrument_ids)();
-        move || ids.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
+        move || {
+            ids.iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        }
     });
 
     rsx! {
@@ -518,7 +550,6 @@ fn ParamsForm() -> Element {
     }
 }
 
-
 #[derive(Props, PartialEq, Clone)]
 pub struct ButtonDet {
     pub name: String,
@@ -544,7 +575,7 @@ pub fn ModelBlock(props: ButtonDet) -> Element {
             disabled: matches!(status(), RunStatus::Running),
             onclick: move |_| {
                 let ctx = ctx.clone();
-                let is_train = action(); 
+                let is_train = action();
                 let mut status = status.to_owned();
 
                 // clone actions you want to choose between (avoid borrowing props across await)
@@ -611,11 +642,8 @@ pub fn ModelBlock(props: ButtonDet) -> Element {
     }
 }
 
-
-
-
 #[derive(Props, PartialEq, Clone)]
-pub struct SearchDropdownProps{
+pub struct SearchDropdownProps {
     /// Values to search/filter
     values: Vec<String>,
     /// Placeholder text

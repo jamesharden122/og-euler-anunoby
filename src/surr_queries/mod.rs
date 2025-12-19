@@ -39,7 +39,9 @@ pub async fn query_surr_trademsg_db(
     instrument_id: i64,   // <--- pass the instrument id directly
 ) -> Result<MyMatrix, ServerFnError> {
     //let db = any::connect("wss://quant-platform-06cb0tpcrpsspao10de28go15s.aws-use1.surreal.cloud").await?;
-    let db = make_db(url.as_str(), user.as_str(), pass.as_str(), ns.as_str(), dbname.as_str()).await?;
+    let db = make_db(url.as_str(), user.as_str(), pass.as_str(), ns.as_str(), dbname.as_str())
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     let column_vec = vec!["price", "size", "ts_in_delta", "ts_recv", "bin_1m"];
     println!("{:?}", column_vec.clone());
     let part_eq_surr = PartEqSurr {
@@ -51,16 +53,21 @@ pub async fn query_surr_trademsg_db(
             _ => None,
     },
     };
-    let mut df = select_table_as_df(&db,"trades", column_vec, part_eq_surr).await?;
+    let mut df = select_table_as_df(&db, "trades", column_vec, part_eq_surr)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     let exprs: Vec<Expr> = vec![col("ts_recv")];
-    df = df.lazy()
-                .sort_by_exprs(exprs, SortMultipleOptions::default())
-                .collect()
-                .unwrap();
-    df = df.drop(time_col.as_str())?;            
+    df = df
+        .lazy()
+        .sort_by_exprs(exprs, SortMultipleOptions::default())
+        .collect()
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    df = df.drop(time_col.as_str())
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     println!("dataframe: {:?}", &df);
     // Extract columns
-    let mut my_matrix = MyMatrix::from_polars_dataframe(&df)?;
+    let mut my_matrix = MyMatrix::from_polars_dataframe(&df)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     //println!("dataframe: {:?}", &my_matrix.data.clone());
     my_matrix = my_matrix.scale_column(0.000000001, 0).unwrap();
     //my_matrix.data = my_matrix.estimate_retuns().unwrap();
@@ -83,7 +90,9 @@ pub async fn query_surr_trade_bin_db(
     bin_size: String,
 ) -> Result<MyMatrix, ServerFnError> {
     //let db = any::connect("wss://quant-platform-06cb0tpcrpsspao10de28go15s.aws-use1.surreal.cloud").await?;
-    let db = make_db(url.as_str(), user.as_str(), pass.as_str(), ns.as_str(), dbname.as_str()).await?;
+    let db = make_db(url.as_str(), user.as_str(), pass.as_str(), ns.as_str(), dbname.as_str())
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     let column_vec = vec![ "ret","t0", "t1", "bin",  "mean_price", "p0", "p1","pmax", "pmin", "price_diff"];
     println!("Column Names {:?}", column_vec.clone());
     let part_eq_surr = PartEqSurr {
@@ -95,18 +104,22 @@ pub async fn query_surr_trade_bin_db(
             _ => None,
     },
     };
-    let mut df = select_table_as_df(&db,"equities_returns", column_vec, part_eq_surr).await?;
+    let mut df = select_table_as_df(&db, "equities_returns", column_vec, part_eq_surr)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     let sort_exprs: Vec<Expr> = vec![col(time_col.clone()),];
     let transformation_expr: Vec<Expr> = vec![datetime_to_nanos_expr(col(time_col.clone()))];
-    df = df.lazy()
-                .sort_by_exprs(sort_exprs, SortMultipleOptions::default())
-                .apply_exprs(transformation_expr)
-                .unwrap();
-    df = df.drop("t0")?;
-    df = df.drop("t1")?;
+    df = df
+        .lazy()
+        .sort_by_exprs(sort_exprs, SortMultipleOptions::default())
+        .apply_exprs(transformation_expr)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    df = df.drop("t0").map_err(|e| ServerFnError::new(e.to_string()))?;
+    df = df.drop("t1").map_err(|e| ServerFnError::new(e.to_string()))?;
     println!("dataframe: {:?}", &df);
     // Extract columns
-    let mut my_matrix = MyMatrix::from_polars_dataframe(&df)?;
+    let mut my_matrix = MyMatrix::from_polars_dataframe(&df)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     let mp_ind = my_matrix.find_index("mean_price").unwrap();
     let p0_ind = my_matrix.find_index("p0").unwrap();
     let p1_ind = my_matrix.find_index("p1").unwrap();
@@ -125,5 +138,4 @@ pub async fn query_surr_trade_bin_db(
     println!("dataframe: {:?}", &my_matrix.data.clone());
     Ok(my_matrix)
 }
-
 

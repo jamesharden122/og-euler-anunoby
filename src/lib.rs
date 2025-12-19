@@ -1,5 +1,8 @@
 pub mod charts;
 pub mod data_structures;
+#[cfg(feature = "server")]
+pub mod dbinst;
+pub mod helpers;
 pub mod model_request;
 pub mod news;
 pub mod ops;
@@ -7,10 +10,12 @@ pub mod prompting;
 pub mod surr_queries;
 pub mod tables;
 pub mod views;
+use std::sync::{Arc, Mutex};
 
 use views::{multi_assets::MultiAsset, portfolio::Portfolio, single_assets::SingleAsset};
 
 use dioxus::prelude::*;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Routable, Debug, PartialEq, Serialize, Deserialize)]

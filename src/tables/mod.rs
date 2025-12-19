@@ -1,6 +1,6 @@
-use crate::ops::MyMatrix;
+use crate::ops::{multi_type_mat::MyMmMatrix, MyMatrix};
 use dioxus::prelude::*;
-
+use serde::{Deserialize, Serialize};
 #[component]
 pub fn SalesTable(props: MyMatrix) -> Element {
     rsx! {
@@ -41,6 +41,7 @@ pub fn SalesTable(props: MyMatrix) -> Element {
     }
 }
 
+//#[component]
 pub fn TradeDisplay(trades: MyMatrix) -> Element {
     let nrow = trades.data.nrows() - 1;
     println!("row number{:?}", nrow);
@@ -62,6 +63,92 @@ pub fn TradeDisplay(trades: MyMatrix) -> Element {
                             td { "{MyMatrix::convert_nano_to_datetime(trade[3]-trade[2]).unwrap()}" } // TS Recv
                     }
                 }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Props, PartialEq, Clone, Serialize, Deserialize)]
+pub struct MyMmMatrixandFacs {
+    pub mat: MyMmMatrix,
+    pub cross_factors: Option<Vec<String>>,
+    pub idiosyn_factors: Option<Vec<String>>,
+    pub id_cols: Vec<String>,
+}
+//In the prop need:
+//      - cross-sectional factor count
+//      - idiosyncratic factor count
+#[component]
+pub fn MultiFactorDisplay(props: MyMmMatrixandFacs) -> Element {
+    let nrow = props.mat.data_f64.nrows();
+    let cf = props.cross_factors.unwrap();
+    let idif = props.idiosyn_factors.unwrap();
+    let idc = props.id_cols;
+    let str_data = props.mat.data_str;
+    let float_data = props.mat.data_f64;
+    let str_cols = props.mat.colnames_enum_str.unwrap();
+    let float_cols = props.mat.colnames_enum_f64.unwrap();
+    let mut count = use_signal(|| 0);
+    let render_cell = |row: usize, column_name: &String| -> String {
+        if let Some((j, _)) = str_cols.iter().find(|(_, s)| s == column_name) {
+            str_data
+                .get((row, *j))
+                .map(|v| v.to_string())
+                .unwrap_or_default()
+        } else if let Some((j, _)) = float_cols.iter().find(|(_, s)| s == column_name) {
+            float_data
+                .get((row, *j))
+                .map(|v| v.to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        }
+    };
+    tracing::debug!("made it this far");
+    rsx! {
+        div {class: "trade-table-wrap",
+        table {class: "trade-table-mf",
+            thead {
+                tr {
+                    th{colspan: idc.len(), ""}
+                    th {colspan: cf.len(),"Cross-Sectional Factors"}
+                    th {colspan: idif.len(),"Idiosyncratic Factors"}
+                }
+                tr {
+                    for nm in idc.iter() {
+                        th { id: "secid", "{nm}" }
+                    }
+                    for nm in cf.iter() {
+                        th { id: "fact", "{nm}" }
+                    }
+                    for nm in idif.iter() {
+                        th { id: "fact", "{nm}"}
+                    }
+                }
+            }
+            tbody {
+                for i in 1..nrow {
+                    tr {class: "ind-trade",
+                        for nm in idc.iter() { td { id: "secid", "{render_cell(i, nm)}" } }
+                        for nm in cf.iter() { td { id: "fact", "{render_cell(i, nm)}" } }
+                        for nm in idif.iter() { td { id: "fact", "{render_cell(i, nm)}" } }
+                    }
+                }
+            }
+        }
+        }
+    }
+}
+
+pub fn SecurityComp() -> Element {
+    rsx! {
+        table { class: "kv-table",
+            tbody {
+            tr { th{"AAPL"} td{"hi"} td{"hi"} td{"hi"} }
+            tr { th{"TSLA"} td{""} td{""} td{""} }
+            tr { th{"IBM"}  td{""} td{""} td{""} }
+            tr { th{"MSFT"} td{""} td{""} td{""} }
+            tr { th{"CNVA"} td{""} td{""} td{""} }
             }
         }
     }
