@@ -304,9 +304,11 @@ html {
 }
 /* Card container */
 .card {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr)); /* minmax(0,1fr) avoids overflow */
-    flex: 1 1 0;  
+    display: flex;
+    flex-direction: row;
+    /*grid-template-columns: repeat(6, minmax(0, 1fr)); /* minmax(0,1fr) avoids overflow */
+    /*flex: 1 1 0;*/
+    width: 98%;
     background: linear-gradient(145deg, #0b0f1a, #131a26);
     border: 1px solid rgba(0, 255, 200, 0.2);
     border-radius: 16px;
@@ -315,8 +317,39 @@ html {
               inset 0 0 12px rgba(0, 255, 200, 0.05);
     color: #e6edf3;
     font-family: 'Fira Code', monospace;
-    width: 100%;
+    padding-left: 1%;
+    padding-right: 1%;
     align-items: flex-start;
+}
+
+.multi-card-div {
+    width: 25%;
+    max-width: 100%;
+}
+
+/* Multi-Asset section headers */
+.multi-asset-h2-wrap {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+}
+
+.multi-asset-h2 {
+    display: inline-block;
+    margin: 1.25rem 1% 0.5rem;
+    padding: 0.45rem 0.85rem;
+    border-left: 4px solid #00ffc8;
+    border-radius: 10px;
+    background: linear-gradient(
+        90deg,
+        rgba(0, 255, 200, 0.14),
+        rgba(0, 136, 255, 0.08)
+    );
+    color: #0b0f1a;
+    font: 900 1.25rem/1.2 "JetBrains Mono", ui-monospace, monospace;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 /* Labels */
 .card label {
@@ -379,6 +412,9 @@ html {
     align-items: center;
     justify-content: center;
 }
+
+.pt .pt-label { opacity: 0; }
+.pt:hover .pt-label { opacity: 1; }
 
 .kv-table {
     width: 70%;

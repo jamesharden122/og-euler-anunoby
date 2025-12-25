@@ -1,11 +1,12 @@
+use crate::charts::clustering::{CharPlot, NmsPca, PcaChart};
 use crate::helpers::{self, dropdownlist};
+use crate::tables::MyMmMatrixandFacsBuilder_Error_Repeated_field_idiosyn_factors;
 #[cfg(feature = "server")]
 use crate::{
     dbinst::{duckstore, SharedDuck},
     helpers::plrs,
 };
 use crate::{
-    news::fetch,
     ops::multi_type_mat::MyMmMatrix,
     prompting::PromptBox,
     tables::{MultiFactorDisplay, SecurityComp},
@@ -14,7 +15,6 @@ use chrono::{NaiveDate, TimeZone, Utc};
 use dioxus::prelude::*;
 #[cfg(feature = "server")]
 use polars::prelude::*;
-use std::env::temp_dir;
 use std::ops::Deref;
 // tokio is not needed directly here
 
@@ -41,12 +41,30 @@ mod dbfac {
             .await
             .map_err(|e| ServerFnError::new(format!("duckdb start error: {:?}", e)))?;
         let arc_conn = Arc::new(Mutex::new(conn.try_clone().unwrap()));
-        wrds_io::instantiatedb::duckdbinst::DbType::EquityFactorsMonthly
-            .ingest(arc_conn.clone(), &factors_path)
-            .await
-            .map_err(|e| {
-                ServerFnError::new(format!("ingest equity factors monthly parquet: {:?}", e))
-            })?;
+        if factors_path == "".to_string() {
+            wrds_io::instantiatedb::duckdbinst::DbType::EquityFactorsMonthly
+                .ingest(arc_conn.clone(), &factors_path)
+                .await
+                .map_err(|e| {
+                    ServerFnError::new(format!("ingest equity factors monthly parquet: {:?}", e))
+                })?;
+        } else {
+            //fundamentals data
+            //if factors_path == "temp2".to_string() {
+            wrds_io::instantiatedb::duckdbinst::DbType::EquityFactorsMonthly
+                .ingest(arc_conn.clone(), &factors_path)
+                .await
+                .map_err(|e| {
+                    ServerFnError::new(format!("ingest equity factors monthly parquet: {:?}", e))
+                })?;
+        } /*else { //header data
+              wrds_io::instantiatedb::duckdbinst::DbType::
+                  .ingest(arc_conn.clone(), &factors_path)
+                  .await
+                  .map_err(|e| {
+                      ServerFnError::new(format!("ingest equity factors monthly parquet: {:?}", e))
+                  })?;
+          }*/
         Ok(arc_conn)
     }
     pub async fn query_factors_range(
@@ -173,12 +191,17 @@ pub fn MultiAsset() -> Element {
             String::from("rvolhl_21d"),
             String::from("ret_60_12"),
             String::from("ret_3_1"),
+            String::from("inv_gr1"),
+            String::from("debt_gr3"),
+            String::from("sale_gr3"),
+            String::from("capx_gr3"),
         ]
     });
     let mut idcols: Signal<Vec<String>> = use_signal(|| Vec::new());
     let mut idiofac: Signal<Vec<String>> = use_signal(|| Vec::new());
     let mut crossfac: Signal<Vec<String>> = use_signal(|| Vec::new());
     let mut bin_size = use_signal(|| "5m".to_string());
+    let mut vis_val = use_signal(|| "".to_string());
     let mut start_date = use_signal(|| Utc::now().to_rfc3339());
     let mut end_date = use_signal(|| Utc::now().to_rfc3339());
     let start_naivedate = use_signal(|| Utc.with_ymd_and_hms(2024, 1, 1, 0, 1, 1).unwrap());
@@ -190,32 +213,34 @@ pub fn MultiAsset() -> Element {
     let mut gp_mat_fac: Signal<Option<MyMmMatrix>> = use_signal(|| None);
 
     let factors_path =
-        "~/Dropbox/Desktop/tesero-sol/software_development/trading/data/raw_files/parquet/factors/global/monthly/2020_2025_parquet.parquet"
+        "~/Dropbox/Desktop/tesero-sol/software_development/trading/data/raw_files/parquet/factors/global/tests/mothly_factors_2024_2025.parquet"
             .to_string();
 
     // Run the server fetch in the background; use_resource won't suspend initial render
-    let resource = use_resource({
-        move || {
-            let country = selected();
-            let factors = factor_list();
-            let start = start_naivedate().date_naive();
-            let end = end_naivedate().date_naive();
-            let path = factors_path.clone();
-            async move {
-                fetch_factors_matrix(
-                    country,
-                    factors,
-                    start,
-                    end,
-                    path,
-                    Some(vec![
-                        String::from("gvkey"),
-                        String::from("iid"),
-                        String::from("excntry"),
-                    ]),
-                )
-                .await
-            }
+    let mut submit_count = use_signal(|| 0);
+    let resource = use_resource(move || {
+        let path = factors_path.clone();
+        async move {
+            // Only rerun when submit_count changes.
+            let _ = submit_count();
+            // Read other values without subscribing, so they don't trigger reruns.
+            let country = selected.peek().clone();
+            let factors = factor_list.peek().clone();
+            let start = start_naivedate.peek().date_naive();
+            let end = end_naivedate.peek().date_naive();
+            fetch_factors_matrix(
+                country,
+                factors,
+                start,
+                end,
+                path,
+                Some(vec![
+                    String::from("gvkey"),
+                    String::from("iid"),
+                    String::from("excntry"),
+                ]),
+            )
+            .await
         }
     });
     use_effect({
@@ -228,9 +253,54 @@ pub fn MultiAsset() -> Element {
             }
         }
     });
+
+    //pca comp var
+    let mut pca_nms: Signal<Option<NmsPca>> = use_signal(|| None);
+    use_effect(move || {
+        let Some(arr) = gp_mat_fac() else {
+            pca_nms.set(None);
+            return;
+        };
+
+        if arr.data_f64.nrows() < 2 || arr.data_f64.ncols() < 2 {
+            pca_nms.set(None);
+            return;
+        }
+
+        match MyMmMatrix::pca_fit_transform_dmatrix(arr.data_f64.clone(), 2, vec![0, 1, 2].into()) {
+            Ok((records, components)) => {
+                if records.nrows() == 0 || records.ncols() < 2 {
+                    pca_nms.set(None);
+                    return;
+                }
+                tracing::debug!("Components {:?}", components);
+                pca_nms.set(Some(NmsPca {
+                    components,
+                    records,
+                    labels: None,
+                    nms: Vec::new(),
+                }));
+            }
+            Err(e) => {
+                tracing::error!("PCA fit/transform failed: {e}");
+                pca_nms.set(None);
+            }
+        }
+        match MyMmMatrix::kmeans_clusters(arr.data_f64) {
+            Ok(labs) => {
+                if let Some(pca) = pca_nms.write().as_mut() {
+                    pca.labels = Some(labs);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Kmeans fit/transform failed: {e}");
+            }
+        }
+    });
+
     rsx! {
         div { class: "card",
-            div {
+            div { class: "multi-card-div",
                 label { "Countries" }
                 select {
                     value: "{selected()}",
@@ -268,15 +338,18 @@ pub fn MultiAsset() -> Element {
                 }                // Show all selected factors below the dropdown
                 button {
                     class: "ma-btn",
-                    onclick: move |_| factor_list.set(Vec::<String>::new()),
+                    onclick: move |_| factor_list.set(vec![
+                        String::from("date"), String::from("gvkey"),
+                        String::from("iid"),  String::from("excntry"),
+                    ]),
                     "Clear Factors"
                 }
                 div { class: "selected-factors",
                     label { "Selected" }
-                    p { "{factor_list().join(\", \")}" }
+                    p {style: "padding-right: 5%;", "{factor_list().join(\", \")}" }
                 }
             }
-            div {
+            div { class: "multi-card-div",
                 label { "Bin Size" }
                 select {
                     value: "{bin_size()}",
@@ -299,49 +372,187 @@ pub fn MultiAsset() -> Element {
                     value: "{end_date().as_str()}",
                     oninput: move |e| end_date.set(e.value()),
                 }
-            }
-        }
-        div {h2 {}}
-        {
-
-            match gp_mat_fac() {
-                Some(mat) => rsx!(
-                    MultiFactorDisplay {
-                        mat,
-                        cross_factors: Some(vec!["dolvol_mean".to_string()]),
-                        idiosyn_factors: Some(vec![
-                            "rvolhl_21d".to_string(),
-                            String::from("rvolhl_21d_mean"),
-                            String::from("ret_60_12_mean"),
-                            String::from("ret_3_1_mean"),
-                        ]),
-                        id_cols: vec![
-                            "gvkey".to_string(),
-                            "iid".to_string(),
-                            "excntry".to_string(),
-                        ],
+                div{
+                    style: "padding-top: 2vh;",
+                    button {
+                        class: "ma-btn",
+                        onclick: move |_| *submit_count.write() += 1,
+                        "submit {submit_count}"
                     }
-                ),
-                None => match resource.read().deref() {
-                    Some(Err(e)) => rsx!(div { class: "error", "Factor load failed: {e}" }),
-                    _ => rsx!(div { "Loading factors…" }),
                 }
             }
         }
+        div { class: "multi-asset-h2-wrap",
+            h2 {class: "multi-asset-h2", "Factor Statistics by Firm"}
+        }
+        {
+
+                match gp_mat_fac() {
+                    Some(mat) => {
+                    // The grouped matrix uses `*_mean` column names; build those names from the selected factors.
+                    let selected_mean: Vec<String> = factor_list()
+                        .iter()
+                        .map(|name| format!("{name}_mean"))
+                        .filter(|name| mat.find_index_f64(name.as_str()).is_some())
+                        .collect();
+
+                    let mut cross_factors: Vec<String> = factor_list()
+                        .iter()
+                        .filter(|name| {
+                            dropdownlist::SelectOptionsProps::crossectional_factors()
+                                .contains(&name.as_str())
+                        })
+                        .map(|name| format!("{name}_mean"))
+                        .filter(|name| mat.find_index_f64(name.as_str()).is_some())
+                        .collect();
+
+                    let mut idiosyn_factors: Vec<String> = factor_list()
+                        .iter()
+                        .filter(|name| {
+                            dropdownlist::SelectOptionsProps::idiosyncratic_factors()
+                                .contains(&name.as_str())
+                        })
+                        .map(|name| format!("{name}_mean"))
+                        .filter(|name| mat.find_index_f64(name.as_str()).is_some())
+                        .collect();
+
+                    // If the category lists are empty/out of date, fall back to "whatever mean columns exist".
+                    if cross_factors.is_empty() && idiosyn_factors.is_empty() {
+                        cross_factors = if !selected_mean.is_empty() {
+                            selected_mean
+                        } else {
+                            mat.colnames_enum_f64
+                                .as_ref()
+                                .map(|cols| {
+                                    cols.iter()
+                                        .map(|(_, name)| name.clone())
+                                        .filter(|name| name.ends_with("_mean"))
+                                        .collect::<Vec<String>>()
+                                })
+                                .unwrap_or_default()
+                        };
+                    }
+
+                        rsx!(
+                            MultiFactorDisplay {
+                            mat,
+                            cross_factors: Some(cross_factors),
+                            idiosyn_factors: Some(idiosyn_factors),
+                            id_cols: vec![
+                                "gvkey".to_string(),
+                                "iid".to_string(),
+                                "excntry".to_string(),
+                            ],
+                            }
+                        )
+                    },
+                    None => match resource.read().deref() {
+                        Some(Err(e)) => rsx!(div { class: "error", "Factor load failed: {e}" }),
+                        _ => rsx!(div { "Loading factors…" }),
+                    }
+                }
+            }
         section { class: "grid-wrapper",
                 PromptBox { }
             }
         section { class: "grid-wrapper",
+
             div{
-                style: "width: 55%",
-                div {
-                    label { "Visuals" }
-                    select {
-                        value: "{bin_size()}",
-                        option { value: "PCA", "PCA" }
-                    }
+                style: "
+                width: 50%;
+                height: 65vh;
+                padding-right:2%;
+                ",
+                dropdownlist::SelectOptions {
+                    value: vis_val(),
+                    options: &["PCA","char"] ,
+                    onchange: move |evt: FormEvent| {
+                        let val = evt.value();
+                        vis_val.set(val.clone());
+                    },
                 }
-            }
+                    div { style: "
+	                    background-color: rgb(0, 0, 0);
+	                    margin-top: 3vh;
+	                    margin-bottom: 3vh;
+	                    margin-right: 5%;
+	                    height: 90%;
+	                    width: 100%;
+	                    color: white;
+	                           ",
+                            h3 { style: "padding-left: 5%;", "Group Snapshot" }
+                            {
+                                match vis_val().as_str() {
+                                    "char" => match gp_mat_fac() {
+                                        Some(mat) => rsx!(
+                                            div {
+                                                style: "
+		                                            width: 100%;
+		                                            height: 100%;
+		                                            display: flex;
+	                                                flex-direction: row;
+	                                                justify-content: center;
+		                                            align-items: start;
+		                                        ",
+                                                CharPlot { mat }
+                                            }
+                                        ),
+                                        None => rsx!(
+                                            div {
+                                                style: "
+		                                        width: 100%;
+		                                        height: 100%;
+		                                        display: flex;
+		                                        align-items: center;
+		                                        justify-content: center;
+		                                    ",
+                                                "Loading group snapshot…"
+                                            }
+                                        ),
+                                    },
+                                    "PCA" => match pca_nms() {
+                                        Some(mat) => rsx!(
+                                            div {
+                                                style: "
+		                                            width: 100%;
+		                                            height: 100%;
+		                                            display: flex;
+	                                                flex-direction: row;
+	                                                justify-content: center;
+		                                            align-items: start;
+		                                        ",
+                                                PcaChart { pca_nms: mat }
+                                            }
+                                        ),
+                                        None => rsx!(
+                                            div {
+                                                style: "
+		                                            width: 100%;
+		                                            height: 100%;
+		                                            display: flex;
+		                                            align-items: center;
+		                                            justify-content: center;
+		                                        ",
+                                                "Loading group snapshot…"
+                                            }
+                                        ),
+                                    },
+                                    _ => rsx!(
+                                        div {
+                                            style: "
+		                                        width: 100%;
+		                                        height: 100%;
+		                                        display: flex;
+		                                        align-items: center;
+		                                        justify-content: center;
+		                                    ",
+                                            "Select a visualization…"
+                                        }
+                                    ),
+                                }
+                            }
+                        }
+                    }
             div {
                 div {
                     label { "Security" }
@@ -357,35 +568,59 @@ pub fn MultiAsset() -> Element {
                         class: "ma-btn",
                         "Similar Corporate"
                     }
+                    button {
+                        class: "ma-btn",
+                        "Low Corr. Corporate"
+                    }
+
                 }
+                h3 { "Security Groups"}
                 div {
-                    h3 {"Group Snapshot"}
+                    style: "margin-top: 3vh;",
                     SecurityComp {}
                 }
+                }
             }
-        }
-        match mat_fac() {
-                Some(mat) => rsx!(
-                    MultiFactorDisplay {
-                        mat,
-                        cross_factors: Some(vec!["dolvol".to_string()]),
-                        idiosyn_factors: Some(vec![
-                            "rvolhl_21d".to_string(),
-                            String::from("rvolhl_21d"),
-                            String::from("ret_60_12"),
-                            String::from("ret_3_1"),
-                        ]),
-                        id_cols: vec![
-                            "date".to_string(),
-                            "gvkey".to_string(),
-                            "iid".to_string(),
-                            "excntry".to_string(),
-                        ],
-                    }
-                ),
-                None => match resource.read().deref() {
-                    Some(Err(e)) => rsx!(div { class: "error", "Factor load failed: {e}" }),
-                    _ => rsx!(div { "Loading factors…" }),
+            div { class: "multi-asset-h2-wrap",
+                h2 {class: "multi-asset-h2","Full Factor Panel"}
+            }
+                {
+                    match mat_fac() {
+                    Some(mat) => rsx!(
+                        MultiFactorDisplay {
+                            mat,
+                            cross_factors: Some(
+                                factor_list()
+                                    .iter()
+                                    .filter(|c| {
+                                        dropdownlist::SelectOptionsProps::crossectional_factors()
+                                            .contains(&c.as_str())
+                                    })
+                                    .cloned()
+                                    .collect::<Vec<String>>(),
+                            ),
+                            idiosyn_factors: Some(
+                                factor_list()
+                                    .iter()
+                                    .filter(|c| {
+                                        dropdownlist::SelectOptionsProps::idiosyncratic_factors()
+                                            .contains(&c.as_str())
+                                    })
+                                    .cloned()
+                                    .collect::<Vec<String>>(),
+                            ),
+                            id_cols: vec![
+                                "date".to_string(),
+                                "gvkey".to_string(),
+                                "iid".to_string(),
+                                "excntry".to_string(),
+                            ],
+                        }
+                    ),
+                    None => match resource.read().deref() {
+                        Some(Err(e)) => rsx!(div { class: "error", "Factor load failed: {e}" }),
+                        _ => rsx!(div { "Loading factors…" }),
+                    },
                 }
             }
     }

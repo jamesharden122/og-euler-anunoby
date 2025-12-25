@@ -1,6 +1,11 @@
 use chrono::{DateTime, Utc};
 use dioxus::prelude::*;
+use linfa::dataset::DatasetBase;
+use linfa::traits::{Fit, Predict};
+use linfa_clustering::{KMeans, KMeansInit};
+use linfa_reduction::Pca;
 use nalgebra::DMatrix;
+use ndarray::{Array2, ArrayBase, Data, Ix2};
 #[cfg(feature = "server")]
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -60,17 +65,6 @@ impl MyMmMatrix {
         self.data_f64.iter_mut().for_each(|x| *x += value);
     }
 
-    pub fn find_index(&self, target: &str) -> Option<usize> {
-        self.colnames_enum_f64
-            .as_ref()
-            .and_then(|vec| vec.iter().find(|(_, name)| name == target).map(|(i, _)| *i))
-            .or_else(|| {
-                self.colnames_enum_str
-                    .as_ref()
-                    .and_then(|vec| vec.iter().find(|(_, name)| name == target).map(|(i, _)| *i))
-            })
-    }
-
     pub fn find_index_f64(&self, target: &str) -> Option<usize> {
         self.colnames_enum_f64
             .as_ref()
@@ -82,6 +76,15 @@ impl MyMmMatrix {
             .as_ref()
             .and_then(|vec| vec.iter().find(|(_, name)| name == target).map(|(i, _)| *i))
     }
+
+    pub fn find_col_index_str(&self, col_ind: &str, target: &str) -> Option<usize> {
+        todo!()
+    }
+
+    pub fn find_col_index_f64(&self, col_ind: &str, target: &str) -> Option<usize> {
+        todo!()
+    }
+
     #[cfg(feature = "server")]
     pub fn from_polars_dataframe(df: &mut DataFrame) -> PolarsResult<Self> {
         //split up dataframe colnames by type
@@ -241,6 +244,269 @@ impl MyMmMatrix {
         let datetime_recv = DateTime::<Utc>::from_timestamp(seconds, nanoseconds).unwrap();
         println!("Received DateTime: {}", datetime_recv);
         Some(datetime_recv)
+    }
+
+    /// Convert nalgebra DMatrix (column-major) -> ndarray Array2 (row-major) safely.
+    fn dmatrix_to_array2(x: &DMatrix<f64>) -> Array2<f64> {
+        let (n, d) = (x.nrows(), x.ncols());
+        Array2::from_shape_fn((n, d), |(i, j)| x[(i, j)])
+    }
+
+    /// Convert ndarray Array2 -> nalgebra DMatrix
+    fn array2_to_dmatrix(a: &Array2<f64>) -> DMatrix<f64> {
+        let (n, d) = a.dim();
+        DMatrix::from_fn(n, d, |i, j| a[(i, j)])
+    }
+
+    /// Fit PCA on a DMatrix where rows = samples, cols = features.
+    /// Returns (fitted_model, projected_data_as_DMatrix).
+    pub fn pca_fit_transform_dmatrix(
+        mut x: DMatrix<f64>,
+        k: usize,
+        col_drop_idxs: Option<Vec<usize>>,
+    ) -> Result<(Array2<f64>, Array2<f64>), String> {
+        tracing::debug!("Removing Columns");
+        let drop_idxs = col_drop_idxs.as_deref().unwrap_or(&[]);
+        if !drop_idxs.is_empty() {
+            x = x.remove_columns_at(drop_idxs);
+        }
+
+        let mut records = Self::dmatrix_to_array2(&x);
+        tracing::debug!("Replacing NaNs with 0's");
+        records.mapv_inplace(|v| if v.is_finite() { v } else { 0.0 });
+
+        let n_samples = records.nrows();
+        let n_features = records.ncols();
+        if n_samples < 2 || n_features == 0 {
+            return Ok((Array2::zeros((0, 0)), Array2::zeros((0, 0))));
+        }
+
+        // Drop near-constant columns to avoid zero-norm directions in the solver.
+        let mut keep: Vec<usize> = Vec::with_capacity(n_features);
+        for j in 0..n_features {
+            let mean = records.column(j).sum() / (n_samples as f64);
+            let mut ss = 0.0_f64;
+            for i in 0..n_samples {
+                let diff = records[(i, j)] - mean;
+                ss += diff * diff;
+            }
+            let var = ss / (n_samples as f64);
+            if var.is_finite() && var > 1e-12 {
+                keep.push(j);
+            }
+        }
+
+        if keep.is_empty() {
+            return Ok((
+                Array2::zeros((n_samples, 0)),
+                Array2::zeros((0, n_features)),
+            ));
+        }
+
+        let mut reduced = Array2::zeros((n_samples, keep.len()));
+        for (new_j, &old_j) in keep.iter().enumerate() {
+            for i in 0..n_samples {
+                reduced[(i, new_j)] = records[(i, old_j)];
+            }
+        }
+
+        // After mean-centering, the maximum rank is `min(n_features, n_samples - 1)`.
+        let k_max = reduced.ncols().min(n_samples.saturating_sub(1));
+        if k_max == 0 {
+            return Ok((Array2::zeros((0, 0)), Array2::zeros((0, 0))));
+        }
+        let k = k.clamp(1, k_max);
+
+        // On wasm32, `linfa_reduction::Pca` can panic inside `linfa-linalg` on some ill-conditioned
+        // inputs. Use a small, deterministic PCA implementation (covariance + symmetric eigendecomp)
+        // instead, to avoid bringing down the whole app.
+        let (mut scores, components_reduced): (Array2<f64>, Array2<f64>) = {
+            #[cfg(target_arch = "wasm32")]
+            {
+                let d_reduced = reduced.ncols();
+                let mut centered = reduced;
+
+                // Mean-center and standardize each column to improve conditioning.
+                let mut means = vec![0.0_f64; d_reduced];
+                for j in 0..d_reduced {
+                    means[j] = centered.column(j).sum() / (n_samples as f64);
+                }
+                for i in 0..n_samples {
+                    for j in 0..d_reduced {
+                        centered[(i, j)] -= means[j];
+                    }
+                }
+
+                let mut stds = vec![1.0_f64; d_reduced];
+                for j in 0..d_reduced {
+                    let mut ss = 0.0_f64;
+                    for i in 0..n_samples {
+                        let v = centered[(i, j)];
+                        ss += v * v;
+                    }
+                    let var = ss / (n_samples as f64 - 1.0).max(1.0);
+                    let std = var.sqrt();
+                    stds[j] = if std.is_finite() && std > 1e-12 {
+                        std
+                    } else {
+                        1.0
+                    };
+                }
+                for i in 0..n_samples {
+                    for j in 0..d_reduced {
+                        centered[(i, j)] /= stds[j];
+                    }
+                }
+
+                // Covariance matrix (d x d), symmetrized for numerical stability.
+                let denom = (n_samples as f64 - 1.0).max(1.0);
+                let mut cov = centered.t().dot(&centered);
+                cov.mapv_inplace(|v| (v / denom).clamp(-f64::MAX, f64::MAX));
+                cov.mapv_inplace(|v| if v.is_finite() { v } else { 0.0 });
+                let mut cov = cov.as_standard_layout().to_owned();
+                for i in 0..d_reduced {
+                    for j in 0..i {
+                        let v = 0.5 * (cov[(i, j)] + cov[(j, i)]);
+                        cov[(i, j)] = v;
+                        cov[(j, i)] = v;
+                    }
+                }
+
+                let cov_slice = cov
+                    .as_slice()
+                    .ok_or_else(|| "Covariance matrix is not contiguous".to_string())?;
+                let cov_dm = DMatrix::from_row_slice(d_reduced, d_reduced, cov_slice);
+                let eig = nalgebra::linalg::SymmetricEigen::new(cov_dm);
+
+                if eig.eigenvalues.iter().any(|v| !v.is_finite()) {
+                    return Err("PCA failed: non-finite eigenvalues".to_string());
+                }
+
+                let mut idx: Vec<usize> = (0..d_reduced).collect();
+                idx.sort_by(|&a, &b| {
+                    let va = eig.eigenvalues[a];
+                    let vb = eig.eigenvalues[b];
+                    // Sort descending, and push any non-finite values to the end.
+                    let va = if va.is_finite() {
+                        va
+                    } else {
+                        f64::NEG_INFINITY
+                    };
+                    let vb = if vb.is_finite() {
+                        vb
+                    } else {
+                        f64::NEG_INFINITY
+                    };
+                    vb.total_cmp(&va)
+                });
+
+                let mut components_reduced = Array2::zeros((k, d_reduced));
+                for (comp_i, &eig_idx) in idx.iter().take(k).enumerate() {
+                    for feat_j in 0..d_reduced {
+                        components_reduced[(comp_i, feat_j)] = eig.eigenvectors[(feat_j, eig_idx)];
+                    }
+                }
+
+                let scores = centered.dot(&components_reduced.t());
+                (scores, components_reduced)
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                tracing::debug!("Creating Linfa Database");
+                let ds = DatasetBase::new(reduced, ()); // no targets
+                tracing::debug!("Fitting PCA");
+                let model = Pca::params(k)
+                    .fit(&ds)
+                    .map_err(|e| format!("PCA fit failed: {e:?}"))?;
+                tracing::debug!("Estimating Scores");
+                let embedded = model.predict(ds);
+                let scores: Array2<f64> = embedded.records().as_standard_layout().to_owned();
+                let components_reduced: Array2<f64> =
+                    model.components().as_standard_layout().to_owned();
+                (scores, components_reduced)
+            }
+        };
+
+        let mut components = Array2::zeros((k, n_features));
+        for (new_j, &old_j) in keep.iter().enumerate() {
+            for i in 0..k {
+                components[(i, old_j)] = components_reduced[(i, new_j)];
+            }
+        }
+
+        tracing::debug!("After PCA making sure the scores and components are finite.");
+        scores.mapv_inplace(|v| if v.is_finite() { v } else { 0.0 });
+        components.mapv_inplace(|v| if v.is_finite() { v } else { 0.0 });
+
+        Ok((scores, components))
+    }
+
+    pub fn kmeans_clusters(x: DMatrix<f64>) -> Result<Array2<f64>, String> {
+        let n_samples = x.nrows();
+        let n_features = x.ncols();
+        if n_samples == 0 {
+            return Ok(Array2::zeros((0, 1)));
+        }
+        if n_features == 0 {
+            return Ok(Array2::zeros((n_samples, 1)));
+        }
+        tracing::debug!("Replacing NaNs with 0's");
+        let mut records = Self::dmatrix_to_array2(&x);
+        records.mapv_inplace(|v| if v.is_finite() { v } else { 0.0 });
+        // Standardize each feature so L2 distance doesn't get dominated by scale.
+        let mut means = vec![0.0_f64; n_features];
+        for j in 0..n_features {
+            means[j] = records.column(j).sum() / (n_samples as f64);
+        }
+
+        let mut stds = vec![1.0_f64; n_features];
+        for j in 0..n_features {
+            let mut ss = 0.0_f64;
+            for i in 0..n_samples {
+                let diff = records[(i, j)] - means[j];
+                ss += diff * diff;
+            }
+            let var = ss / (n_samples as f64);
+            let std = var.sqrt();
+            stds[j] = if std.is_finite() && std > 1e-12 {
+                std
+            } else {
+                1.0
+            };
+        }
+        tracing::debug!("Standardize Columns");
+        for i in 0..n_samples {
+            for j in 0..n_features {
+                records[(i, j)] = (records[(i, j)] - means[j]) / stds[j];
+            }
+        }
+
+        // Choose k heuristically since the signature doesn't accept it.
+        let k = if n_samples <= 1 {
+            1
+        } else {
+            let k_max = n_samples.min(8);
+            ((n_samples as f64).sqrt().round() as usize).clamp(2, k_max)
+        };
+        tracing::debug!("Creating Linfa Database");
+        let ds = DatasetBase::new(records, ());
+        tracing::debug!("Instantiate Kmeans");
+        // When targeting wasm (Dioxus web), `getrandom` is already wired up (via `getrandom/js`),
+        // so we can use it to pick randomized initial centroids without pulling in `rand` here.
+        let init = KMeansInit::KMeansPlusPlus;
+        tracing::debug!("Estimate groups");
+        let model = KMeans::params(k)
+            .init_method(init)
+            .tolerance(1e-2)
+            .fit(&ds)
+            .map_err(|e| format!("KMeans fit failed: {e:?}"))?;
+        let clustered = model.predict(ds);
+        let memberships = clustered.targets();
+        tracing::debug!("Output Labels");
+        Ok(Array2::from_shape_fn((n_samples, 1), |(i, _)| {
+            memberships[i] as f64
+        }))
     }
 }
 

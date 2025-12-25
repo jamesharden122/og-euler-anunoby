@@ -1,3 +1,4 @@
+pub mod chatgpt_ops;
 use crate::news::fetch::NewsBoxProps;
 use arraydeque::{ArrayDeque, Wrapping};
 use arrayvec::ArrayString;
@@ -16,7 +17,7 @@ pub fn PromptBox() -> Element {
 
             }
             button {
-                "news update"
+                "Enter"
             }
         }
         div { class: "prompt-out",

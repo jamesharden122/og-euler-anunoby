@@ -40,8 +40,33 @@ impl SelectOptionsProps {
     pub fn crossectional_factors() -> &'static [&'static str] {
         Self::CSECTION_FACS
     }
-    pub const CSECTION_FACS: &'static [&'static str] = &["hello"];
-    pub const IDIOSYN_FACS: &'static [&'static str] = &["hello"];
+    pub fn idiosyncratic_factors_mu() -> &'static [&'static str] {
+        Self::IDIOSYN_FACS_MU
+    }
+    pub fn crossectional_factors_mu() -> &'static [&'static str] {
+        Self::CSECTION_FACS_MU
+    }
+
+    pub const CSECTION_FACS: &'static [&'static str] = &["dolvol"];
+    pub const CSECTION_FACS_MU: &'static [&'static str] = &["dolvol_mean"];
+    pub const IDIOSYN_FACS: &'static [&'static str] = &[
+        "rvolhl_21d",
+        "ret_60_12",
+        "ret_3_1",
+        "inv_gr1",
+        "debt_gr3",
+        "sale_gr3",
+        "capx_gr3",
+    ];
+    pub const IDIOSYN_FACS_MU: &'static [&'static str] = &[
+        "rvolhl_21d_mean",
+        "ret_60_12_mean",
+        "ret_3_1_mean",
+        "inv_gr1_mean",
+        "debt_gr3_mean",
+        "sale_gr3_mean",
+        "capx_gr3_mean",
+    ];
     pub const GLOBAL_FACS: &'static [&'static str] = &[
         "obs_main",
         "exch_main",

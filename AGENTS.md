@@ -42,4 +42,6 @@
 - Dioxus crates: https://docs.rs/dioxus/0.7.2/dioxus/index.html
 - DuckDB docs: https://duckdb.org/docs/stable/
 - DuckDB crate docs: https://docs.rs/duckdb/latest/duckdb/
-
+- linfa_nn crate docs(nearest_neigbor library): https://docs.rs/linfa-nn/latest/linfa_nn/index.html 
+- linfa_reduction crate docs: https://docs.rs/linfa-reduction/latest/linfa_reduction/
+- linfa crate(toolkit to build machine learning applications): https://docs.rs/linfa/latest/linfa/

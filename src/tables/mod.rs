@@ -104,7 +104,14 @@ pub fn MultiFactorDisplay(props: MyMmMatrixandFacs) -> Element {
             String::new()
         }
     };
-    tracing::debug!("made it this far");
+    fn render_cell_6(s: String) -> String {
+        if let Ok(x) = s.parse::<f64>() {
+            format!("{:.6}", x)
+        } else {
+            s
+        }
+    }
+
     rsx! {
         div {class: "trade-table-wrap",
         table {class: "trade-table-mf",
@@ -130,8 +137,8 @@ pub fn MultiFactorDisplay(props: MyMmMatrixandFacs) -> Element {
                 for i in 1..nrow {
                     tr {class: "ind-trade",
                         for nm in idc.iter() { td { id: "secid", "{render_cell(i, nm)}" } }
-                        for nm in cf.iter() { td { id: "fact", "{render_cell(i, nm)}" } }
-                        for nm in idif.iter() { td { id: "fact", "{render_cell(i, nm)}" } }
+                        for nm in cf.iter() { td { id: "fact", "{render_cell_6(render_cell(i, nm))}" } }
+                        for nm in idif.iter() { td { id: "fact", "{render_cell_6(render_cell(i, nm))}" } }
                     }
                 }
             }
